@@ -1,0 +1,87 @@
+import cv2
+from cvzone.HandTrackingModule import HandDetector
+import numpy as np
+import math
+import time
+
+# --- INITIALIZATION ---
+cap = cv2.VideoCapture(0)
+detector = HandDetector(maxHands=1)
+
+# Parameters
+offset = 20  # Margin around the hand bounding box
+imgSize = 300 # Target size for the white square image
+
+# Data collection settings
+# IMPORTANT: Change 'C' to 'A' or 'B' to collect data for that specific sign.
+folder = "Data/C" 
+counter = 0
+
+while True:
+    success, img = cap.read()
+    # Find hands, do not draw keypoints on the main image
+    hands, img = detector.findHands(img, draw=False) 
+
+    if hands:
+        hand = hands[0]
+        x, y, w, h = hand['bbox']
+
+        # Safely determine crop area to prevent out-of-bounds error
+        x1, y1 = max(0, x - offset), max(0, y - offset)
+        x2, y2 = min(img.shape[1], x + w + offset), min(img.shape[0], y + h + offset)
+        
+        imgCrop = img[y1:y2, x1:x2]
+        imgCropShape = imgCrop.shape
+
+        if imgCropShape[0] > 0 and imgCropShape[1] > 0:
+            # Create a 300x300 white background image
+            imgWhite = np.ones((imgSize, imgSize, 3), np.uint8) * 255
+            
+            # --- Aspect Ratio Check and Resizing ---
+            aspectRatio = h / w
+
+            if aspectRatio > 1:
+                # Height is greater: Fix height to imgSize (300)
+                k = imgSize / h
+                wCal = math.ceil(k * w) # Calculated Width
+                imgResize = cv2.resize(imgCrop, (wCal, imgSize))
+                wGap = math.ceil((imgSize - wCal) / 2) # Gap for horizontal centering
+                
+                # Place resized image on the center of the white image
+                imgWhite[:, wGap:wCal + wGap] = imgResize
+                
+            else: 
+                # Width is greater or equal: Fix width to imgSize (300)
+                k = imgSize / w
+                hCal = math.ceil(k * h) # Calculated Height
+                # Note: cv2.resize expects (width, height)
+                imgResize = cv2.resize(imgCrop, (imgSize, hCal)) 
+                hGap = math.ceil((imgSize - hCal) / 2) # Gap for vertical centering
+                
+                # Place resized image on the center of the white image
+                imgWhite[hGap:hCal + hGap, :] = imgResize
+            
+            # Show processed images (optional during collection)
+            cv2.imshow("ImageCrop", imgCrop)
+            cv2.imshow("ImageWhite", imgWhite)
+
+    # Display Main Image
+    cv2.imshow("Image", img)
+    key = cv2.waitKey(1)
+
+    # Save image on 's' key press [00:33:10]
+    if key == ord('s'):
+        if 'imgWhite' in locals():
+            counter += 1
+            # Use timestamp for a unique file name
+            cv2.imwrite(f'{folder}/Image_{time.time()}.jpg', imgWhite) 
+            print(f'Saved {counter} images to {folder}')
+        else:
+            print("Hand not detected or image crop failed. Cannot save.")
+
+    # Exit on 'q' key press
+    if key == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
